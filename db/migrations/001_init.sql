@@ -31,6 +31,7 @@ CREATE TABLE IF NOT EXISTS applications (
     ai_feedback TEXT,
     resume_suggestions TEXT,
     cover_letter TEXT,
+    notes TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

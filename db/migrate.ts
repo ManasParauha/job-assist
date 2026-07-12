@@ -18,13 +18,17 @@ async function runMigration() {
     await client.connect();
     console.log('Connected successfully. Reading migration file...');
 
-    const migrationPath = path.join(__dirname, 'migrations', '001_init.sql');
-    const sql = fs.readFileSync(migrationPath, 'utf8');
-
+    const migrationPath1 = path.join(__dirname, 'migrations', '001_init.sql');
+    const sql1 = fs.readFileSync(migrationPath1, 'utf8');
     console.log('Executing migration 001_init.sql...');
-    await client.query(sql);
+    await client.query(sql1);
 
-    console.log('Migration completed successfully!');
+    const migrationPath2 = path.join(__dirname, 'migrations', '002_add_notes.sql');
+    const sql2 = fs.readFileSync(migrationPath2, 'utf8');
+    console.log('Executing migration 002_add_notes.sql...');
+    await client.query(sql2);
+
+    console.log('Migrations completed successfully!');
   } catch (error) {
     console.error('Migration failed:', error);
     process.exit(1);
