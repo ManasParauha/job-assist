@@ -72,6 +72,44 @@ export default function ApplicationDetailsClient({ initialApplication }: Applica
   const [aiError, setAiError] = useState<string | null>(null);
   const [aiErrorType, setAiErrorType] = useState<string | null>(null);
 
+  // AI Resume Suggestions states
+  const [sugLoading, setSugLoading] = useState(false);
+  const [sugError, setSugError] = useState<string | null>(null);
+  const [sugErrorType, setSugErrorType] = useState<string | null>(null);
+
+  const handleGetSuggestions = async () => {
+    setSugLoading(true);
+    setSugError(null);
+    setSugErrorType(null);
+
+    try {
+      const res = await fetch('/api/ai/resume-suggestions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applicationId: app.id }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setApp((prev) => ({
+          ...prev,
+          resume_suggestions: JSON.stringify(data),
+        }));
+        router.refresh();
+      } else {
+        setSugError(data.error || 'Failed to generate suggestions.');
+        if (data.code === 'NO_RESUME') {
+          setSugErrorType('no_resume');
+        }
+      }
+    } catch (err: any) {
+      setSugError(err.message || 'An error occurred while connecting to the server.');
+    } finally {
+      setSugLoading(false);
+    }
+  };
+
   const handleGetMatchScore = async () => {
     setAiLoading(true);
     setAiError(null);
@@ -239,6 +277,21 @@ export default function ApplicationDetailsClient({ initialApplication }: Applica
     }
   }
 
+  // Parse resume suggestions from resume_suggestions JSON string
+  let suggestionsObj: {
+    tailored_summary: string;
+    bullet_rewrites: Array<{ before: string; after: string }>;
+    missing_keywords: string[];
+  } | null = null;
+  
+  if (app.resume_suggestions) {
+    try {
+      suggestionsObj = JSON.parse(app.resume_suggestions);
+    } catch (e) {
+      console.error('Error parsing resume suggestions:', e);
+    }
+  }
+
   // Collapsible text calculation
   const isJdLong = app.jd_text.length > 320;
   const jdDisplay = isJdExpanded || !isJdLong ? app.jd_text : `${app.jd_text.slice(0, 320)}…`;
@@ -362,6 +415,110 @@ export default function ApplicationDetailsClient({ initialApplication }: Applica
               </div>
             </div>
           </Card>
+
+          {/* Suggestions loading or error or display */}
+          {sugLoading && (
+            <Card className="border border-[#ebebeb] bg-white shadow-sm mt-6 p-6 sm:p-8 space-y-6">
+              <div className="flex items-center gap-2 border-b border-[#ebebeb] pb-4">
+                <Sparkles className="h-5 w-5 text-[#0070f3] animate-pulse" aria-hidden="true" />
+                <h2 className="text-xl font-semibold text-[#171717] tracking-tight">Generating Resume Suggestions…</h2>
+              </div>
+              <div className="space-y-4">
+                <div className="h-4 bg-[#f5f5f5] rounded w-3/4 animate-pulse" />
+                <div className="h-4 bg-[#f5f5f5] rounded w-1/2 animate-pulse" />
+                <div className="space-y-4 pt-4">
+                  <div className="h-24 bg-[#f5f5f5] rounded-md animate-pulse" />
+                  <div className="h-24 bg-[#f5f5f5] rounded-md animate-pulse" />
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {!sugLoading && sugError && (
+            <Card className="border border-[#ee0000] bg-[#f7d4d6]/10 shadow-sm mt-6 p-6 sm:p-8 space-y-4">
+              <div className="flex items-center gap-2 text-[#ee0000]">
+                <FileEdit className="h-5 w-5" aria-hidden="true" />
+                <h2 className="text-lg font-semibold tracking-tight">Suggestions Failed</h2>
+              </div>
+              <p className="text-sm text-[#171717]">{sugError}</p>
+              {sugErrorType === 'no_resume' && (
+                <div className="pt-2">
+                  <Link
+                    href="/profile"
+                    className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-[#ee0000] text-white hover:bg-[#c50000] text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    Complete Your Profile & Resume →
+                  </Link>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {!sugLoading && suggestionsObj && (
+            <Card className="border border-[#ebebeb] bg-white shadow-sm mt-6">
+              <div className="p-6 sm:p-8 space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#ebebeb] pb-4">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-5 w-5 text-[#0070f3]" aria-hidden="true" />
+                    <h2 className="text-xl font-semibold text-[#171717] tracking-tight">Resume Suggestions</h2>
+                  </div>
+                  <span className="text-xs text-[#888888] font-mono">Powered by Groq Llama-3.3</span>
+                </div>
+
+                {/* Tailored Summary */}
+                <div className="space-y-2">
+                  <h3 className="text-xs font-semibold text-[#4d4d4d] uppercase tracking-wider font-mono">Tailored Summary</h3>
+                  <div className="p-4 bg-[#fafafa] border-l-4 border-[#0070f3] rounded-r-lg text-sm text-[#171717] leading-relaxed">
+                    {suggestionsObj.tailored_summary}
+                  </div>
+                </div>
+
+                {/* Bullet Rewrites */}
+                <div className="space-y-3">
+                  <div>
+                    <h3 className="text-xs font-semibold text-[#4d4d4d] uppercase tracking-wider font-mono">Content Suggestions & Bullet Rewrites</h3>
+                    <p className="text-xs text-[#888888] mt-0.5">Incorporate these targeted changes to align closer with the job description without fabricating new experience.</p>
+                  </div>
+                  <div className="space-y-4 mt-2">
+                    {suggestionsObj.bullet_rewrites.map((rewrite, idx) => (
+                      <div key={idx} className="border border-[#ebebeb] rounded-lg p-4 bg-white space-y-2.5">
+                        <div className="flex items-center gap-2 text-[10px] font-semibold text-[#888888] uppercase tracking-wider font-mono">
+                          <span className="inline-block w-1.5 h-1.5 rounded-full bg-[#888888]" />
+                          Original Resume Line
+                        </div>
+                        <p className="text-sm text-[#888888] line-through leading-relaxed pl-3.5">
+                          {rewrite.before}
+                        </p>
+                        <div className="flex items-center gap-2 text-[10px] font-semibold text-[#0070f3] uppercase tracking-wider font-mono mt-3">
+                          <Sparkles className="h-3 w-3" aria-hidden="true" />
+                          Tailored Suggestion
+                        </div>
+                        <p className="text-sm text-[#171717] font-medium leading-relaxed bg-[#fafafa] border-l-2 border-[#0070f3] p-3 rounded-r-md">
+                          {rewrite.after}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Missing Keywords */}
+                <div className="space-y-2">
+                  <h3 className="text-xs font-semibold text-[#4d4d4d] uppercase tracking-wider font-mono">Missing Keywords & Skills</h3>
+                  <p className="text-xs text-[#888888] mt-0.5">Found in the job description but not clearly represented on your resume:</p>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {suggestionsObj.missing_keywords.map((keyword, idx) => (
+                      <span
+                        key={idx}
+                        className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-[#fafafa] border border-[#ebebeb] text-[#4d4d4d] hover:bg-[#f5f5f5] transition-colors"
+                      >
+                        {keyword}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Card>
+          )}
         </div>
 
         {/* Right Side: AI Tools & suggestions PLACEHOLDERS */}
@@ -475,24 +632,51 @@ export default function ApplicationDetailsClient({ initialApplication }: Applica
                   )}
                 </div>
 
-                {/* Resume Suggestions Card Placeholder */}
-                <div className="border border-[#ebebeb] rounded-lg p-4 bg-[#fafafa] space-y-2">
+                {/* Resume Suggestions Card */}
+                <div className="border border-[#ebebeb] rounded-lg p-4 bg-[#fafafa] space-y-3">
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-[#888888] uppercase tracking-wider font-mono">
-                    <FileEdit className="h-3.5 w-3.5 text-[#888888]" />
+                    <FileEdit className="h-3.5 w-3.5 text-[#888888]" aria-hidden="true" />
                     Resume Suggestions
                   </div>
                   <p className="text-[11px] text-[#888888] leading-relaxed">
                     Identify keyword gaps and content suggestions based on the job listing.
                   </p>
-                  <Button
-                    disabled
-                    variant="outline"
-                    className="w-full h-8 px-3 text-xs bg-white border-[#ebebeb] text-[#888888] opacity-60 flex items-center justify-center gap-1"
-                  >
-                    <Sparkles className="h-3 w-3" />
-                    Get Suggestions
-                    <span className="text-[9px] px-1.5 py-0.2 bg-[#ebebeb] rounded text-[#4d4d4d] ml-1">AI Coming soon</span>
-                  </Button>
+
+                  {/* Error display inline inside sidebar */}
+                  {sugError && !sugLoading && (
+                    <div className="p-3 text-xs rounded-md bg-[#f7d4d6] border border-[#ee0000] text-[#ee0000] space-y-1">
+                      <p>{sugError}</p>
+                      {sugErrorType === 'no_resume' && (
+                        <p className="mt-1">
+                          <Link href="/profile" className="font-semibold underline hover:text-[#c50000] text-[#ee0000] inline-block">
+                            Go to Profile →
+                          </Link>
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {!sugLoading && (
+                    <Button
+                      variant={suggestionsObj ? "outline" : "default"}
+                      onClick={handleGetSuggestions}
+                      className={`w-full h-8 px-3 text-xs flex items-center justify-center gap-1 cursor-pointer ${
+                        suggestionsObj 
+                          ? 'bg-white border-[#ebebeb] hover:bg-[#f5f5f5] text-[#171717]' 
+                          : 'bg-[#171717] hover:bg-[#333] text-white'
+                      }`}
+                    >
+                      <Sparkles className="h-3 w-3" aria-hidden="true" />
+                      {suggestionsObj ? 'Re-run Suggestions' : 'Get Suggestions'}
+                    </Button>
+                  )}
+
+                  {sugLoading && (
+                    <div className="flex flex-col items-center justify-center space-y-2 py-4">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#171717]" />
+                      <span className="text-xs text-[#888888] animate-pulse">Generating suggestions…</span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Cover Letter Card Placeholder */}
