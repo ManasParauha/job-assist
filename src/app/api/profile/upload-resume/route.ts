@@ -2,7 +2,9 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { sanitizeHtml } from "@/lib/utils";
-import pdf from "pdf-parse";
+// @ts-ignore
+import pdf from "pdf-parse/lib/pdf-parse.js";
+
 
 export async function POST(request: NextRequest) {
   try {
