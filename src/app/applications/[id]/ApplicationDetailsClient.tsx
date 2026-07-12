@@ -21,7 +21,9 @@ import {
   Trash2, 
   Sparkles, 
   FileEdit,
-  ClipboardSignature 
+  ClipboardSignature,
+  Copy,
+  Check
 } from 'lucide-react';
 
 interface Application {
@@ -76,6 +78,12 @@ export default function ApplicationDetailsClient({ initialApplication }: Applica
   const [sugLoading, setSugLoading] = useState(false);
   const [sugError, setSugError] = useState<string | null>(null);
   const [sugErrorType, setSugErrorType] = useState<string | null>(null);
+
+  // AI Cover Letter states
+  const [clLoading, setClLoading] = useState(false);
+  const [clError, setClError] = useState<string | null>(null);
+  const [clErrorType, setClErrorType] = useState<string | null>(null);
+  const [clCopied, setClCopied] = useState(false);
 
   const handleGetSuggestions = async () => {
     setSugLoading(true);
@@ -144,6 +152,50 @@ export default function ApplicationDetailsClient({ initialApplication }: Applica
       setAiError(err.message || 'An error occurred while connecting to the server.');
     } finally {
       setAiLoading(false);
+    }
+  };
+  
+  const handleGenerateCoverLetter = async () => {
+    setClLoading(true);
+    setClError(null);
+    setClErrorType(null);
+
+    try {
+      const res = await fetch('/api/ai/cover-letter', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applicationId: app.id }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setApp((prev) => ({
+          ...prev,
+          cover_letter: data.coverLetter,
+        }));
+        router.refresh();
+      } else {
+        setClError(data.error || 'Failed to generate cover letter.');
+        if (data.code === 'NO_RESUME') {
+          setClErrorType('no_resume');
+        }
+      }
+    } catch (err: any) {
+      setClError(err.message || 'An error occurred while connecting to the server.');
+    } finally {
+      setClLoading(false);
+    }
+  };
+
+  const handleCopyCoverLetter = async () => {
+    if (!app.cover_letter) return;
+    try {
+      await navigator.clipboard.writeText(app.cover_letter);
+      setClCopied(true);
+      setTimeout(() => setClCopied(false), 2000);
+    } catch (err) {
+      console.error('Failed to copy text: ', err);
     }
   };
 
@@ -519,6 +571,85 @@ export default function ApplicationDetailsClient({ initialApplication }: Applica
               </div>
             </Card>
           )}
+
+          {/* Cover Letter Section */}
+          {clLoading && (
+            <Card className="border border-[#ebebeb] bg-white shadow-sm mt-6 p-6 sm:p-8 space-y-6">
+              <div className="flex items-center gap-2 border-b border-[#ebebeb] pb-4">
+                <ClipboardSignature className="h-5 w-5 text-[#0070f3] animate-pulse" aria-hidden="true" />
+                <h2 className="text-xl font-semibold text-[#171717] tracking-tight">Generating Cover Letter…</h2>
+              </div>
+              <div className="space-y-4">
+                <div className="h-4 bg-[#f5f5f5] rounded w-3/4 animate-pulse" />
+                <div className="h-4 bg-[#f5f5f5] rounded w-1/2 animate-pulse" />
+                <div className="space-y-4 pt-4">
+                  <div className="h-48 bg-[#f5f5f5] rounded-md animate-pulse" />
+                </div>
+              </div>
+            </Card>
+          )}
+
+          {!clLoading && clError && (
+            <Card className="border border-[#ee0000] bg-[#f7d4d6]/10 shadow-sm mt-6 p-6 sm:p-8 space-y-4">
+              <div className="flex items-center gap-2 text-[#ee0000]">
+                <ClipboardSignature className="h-5 w-5" aria-hidden="true" />
+                <h2 className="text-lg font-semibold tracking-tight">Cover Letter Generation Failed</h2>
+              </div>
+              <p className="text-sm text-[#171717]">{clError}</p>
+              {clErrorType === 'no_resume' && (
+                <div className="pt-2">
+                  <Link
+                    href="/profile"
+                    className="inline-flex items-center justify-center px-4 py-2 rounded-md bg-[#ee0000] text-white hover:bg-[#c50000] text-xs font-medium transition-colors cursor-pointer"
+                  >
+                    Complete Your Profile & Resume →
+                  </Link>
+                </div>
+              )}
+            </Card>
+          )}
+
+          {!clLoading && app.cover_letter && (
+            <Card className="border border-[#ebebeb] bg-white shadow-sm mt-6">
+              <div className="p-6 sm:p-8 space-y-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-[#ebebeb] pb-4">
+                  <div className="flex items-center gap-2">
+                    <ClipboardSignature className="h-5 w-5 text-[#0070f3]" aria-hidden="true" />
+                    <h2 className="text-xl font-semibold text-[#171717] tracking-tight">Generated Cover Letter</h2>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      onClick={handleCopyCoverLetter}
+                      className="flex items-center gap-1.5 h-8 px-3 text-xs border-[#ebebeb] hover:bg-[#f5f5f5] cursor-pointer"
+                    >
+                      {clCopied ? (
+                        <>
+                          <Check className="h-3.5 w-3.5 text-emerald-600" aria-hidden="true" />
+                          Copied!
+                        </>
+                      ) : (
+                        <>
+                          <Copy className="h-3.5 w-3.5 text-[#888888]" aria-hidden="true" />
+                          Copy to Clipboard
+                        </>
+                      )}
+                    </Button>
+                    <span className="text-xs text-[#888888] font-mono hidden sm:inline">Llama-3.3</span>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Textarea
+                    readOnly
+                    value={app.cover_letter}
+                    className="min-h-[350px] font-sans leading-relaxed text-sm bg-white border-[#ebebeb] resize-y"
+                    onClick={(e) => (e.target as HTMLTextAreaElement).select()}
+                  />
+                </div>
+              </div>
+            </Card>
+          )}
         </div>
 
         {/* Right Side: AI Tools & suggestions PLACEHOLDERS */}
@@ -679,8 +810,8 @@ export default function ApplicationDetailsClient({ initialApplication }: Applica
                   )}
                 </div>
 
-                {/* Cover Letter Card Placeholder */}
-                <div className="border border-[#ebebeb] rounded-lg p-4 bg-[#fafafa] space-y-2">
+                {/* Cover Letter Card */}
+                <div className="border border-[#ebebeb] rounded-lg p-4 bg-[#fafafa] space-y-3">
                   <div className="flex items-center gap-1.5 text-xs font-semibold text-[#888888] uppercase tracking-wider font-mono">
                     <ClipboardSignature className="h-3.5 w-3.5 text-[#888888]" />
                     Cover Letter
@@ -688,15 +819,42 @@ export default function ApplicationDetailsClient({ initialApplication }: Applica
                   <p className="text-[11px] text-[#888888] leading-relaxed">
                     Draft a customized cover letter highlighting relevant achievements.
                   </p>
-                  <Button
-                    disabled
-                    variant="outline"
-                    className="w-full h-8 px-3 text-xs bg-white border-[#ebebeb] text-[#888888] opacity-60 flex items-center justify-center gap-1"
-                  >
-                    <Sparkles className="h-3 w-3" />
-                    Generate Letter
-                    <span className="text-[9px] px-1.5 py-0.2 bg-[#ebebeb] rounded text-[#4d4d4d] ml-1">AI Coming soon</span>
-                  </Button>
+
+                  {/* Error display inline inside sidebar */}
+                  {clError && !clLoading && (
+                    <div className="p-3 text-xs rounded-md bg-[#f7d4d6] border border-[#ee0000] text-[#ee0000] space-y-1">
+                      <p>{clError}</p>
+                      {clErrorType === 'no_resume' && (
+                        <p className="mt-1">
+                          <Link href="/profile" className="font-semibold underline hover:text-[#c50000] text-[#ee0000] inline-block">
+                            Go to Profile →
+                          </Link>
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {!clLoading && (
+                    <Button
+                      variant={app.cover_letter ? "outline" : "default"}
+                      onClick={handleGenerateCoverLetter}
+                      className={`w-full h-8 px-3 text-xs flex items-center justify-center gap-1 cursor-pointer ${
+                        app.cover_letter 
+                          ? 'bg-white border-[#ebebeb] hover:bg-[#f5f5f5] text-[#171717]' 
+                          : 'bg-[#171717] hover:bg-[#333] text-white'
+                      }`}
+                    >
+                      <Sparkles className="h-3 w-3" aria-hidden="true" />
+                      {app.cover_letter ? 'Re-run Cover Letter' : 'Generate Letter'}
+                    </Button>
+                  )}
+
+                  {clLoading && (
+                    <div className="flex flex-col items-center justify-center space-y-2 py-4">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#171717]" />
+                      <span className="text-xs text-[#888888] animate-pulse">Generating letter…</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
