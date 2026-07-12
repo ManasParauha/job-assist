@@ -67,6 +67,48 @@ export default function ApplicationDetailsClient({ initialApplication }: Applica
   const [editErrors, setEditErrors] = useState<Record<string, string[]>>({});
   const [editGeneralError, setEditGeneralError] = useState<string | null>(null);
 
+  // AI Match Score states
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
+  const [aiErrorType, setAiErrorType] = useState<string | null>(null);
+
+  const handleGetMatchScore = async () => {
+    setAiLoading(true);
+    setAiError(null);
+    setAiErrorType(null);
+
+    try {
+      const res = await fetch('/api/ai/match-score', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applicationId: app.id }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok) {
+        setApp((prev) => ({
+          ...prev,
+          match_score: data.match_score,
+          ai_feedback: JSON.stringify({
+            strengths: data.strengths,
+            gaps: data.gaps,
+          }),
+        }));
+        router.refresh();
+      } else {
+        setAiError(data.error || 'Failed to calculate match score.');
+        if (data.code === 'NO_RESUME') {
+          setAiErrorType('no_resume');
+        }
+      }
+    } catch (err: any) {
+      setAiError(err.message || 'An error occurred while connecting to the server.');
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   // Update status quick-dropdown handler
   const handleStatusChange = async (newStatus: 'applied' | 'interview' | 'offer' | 'rejected') => {
     try {
@@ -186,6 +228,16 @@ export default function ApplicationDetailsClient({ initialApplication }: Applica
       </span>
     );
   };
+
+  // Parse strengths and gaps from ai_feedback JSON string
+  let feedbackObj: { strengths: string[]; gaps: string[] } = { strengths: [], gaps: [] };
+  if (app.ai_feedback) {
+    try {
+      feedbackObj = JSON.parse(app.ai_feedback);
+    } catch (e) {
+      feedbackObj = { strengths: [app.ai_feedback], gaps: [] };
+    }
+  }
 
   // Collapsible text calculation
   const isJdLong = app.jd_text.length > 320;
@@ -325,20 +377,102 @@ export default function ApplicationDetailsClient({ initialApplication }: Applica
               </p>
               
               <div className="space-y-3 pt-2">
-                {/* Match Score Card Placeholder */}
-                <div className="border border-[#ebebeb] rounded-lg p-4 bg-[#fafafa] text-center space-y-2">
-                  <div className="text-xs font-semibold text-[#888888] uppercase tracking-wider font-mono">Match Score</div>
-                  <div className="text-3xl font-bold text-[#888888] tracking-tight">--%</div>
-                  <div className="text-[11px] text-[#888888]">Analyze resume similarity score.</div>
-                  <Button
-                    disabled
-                    variant="outline"
-                    className="w-full h-8 px-3 text-xs bg-white border-[#ebebeb] text-[#888888] opacity-60 flex items-center justify-center gap-1"
-                  >
-                    <Sparkles className="h-3 w-3" />
-                    Get Match Score
-                    <span className="text-[9px] px-1.5 py-0.2 bg-[#ebebeb] rounded text-[#4d4d4d] ml-1">AI Coming soon</span>
-                  </Button>
+                {/* Match Score Card */}
+                <div className="border border-[#ebebeb] rounded-lg p-4 bg-[#fafafa] space-y-3">
+                  <div className="text-center">
+                    <div className="text-xs font-semibold text-[#888888] uppercase tracking-wider font-mono">Match Score</div>
+                    {app.match_score !== null && !aiLoading && (
+                      <div className={`text-4xl font-bold tracking-tight mt-1 ${
+                        app.match_score >= 70 
+                          ? 'text-emerald-600 dark:text-emerald-400' 
+                          : app.match_score >= 40 
+                            ? 'text-amber-500 dark:text-amber-400' 
+                            : 'text-rose-600 dark:text-rose-400'
+                      }`}>
+                        {app.match_score}%
+                      </div>
+                    )}
+                    {(app.match_score === null || aiLoading) && (
+                      <div className="text-3xl font-bold text-[#888888] tracking-tight mt-1">
+                        {aiLoading ? (
+                          <span className="inline-block animate-pulse">...</span>
+                        ) : (
+                          '--%'
+                        )}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Display Strengths and Gaps if they exist and we are not loading */}
+                  {app.match_score !== null && !aiLoading && (
+                    <div className="space-y-3 pt-2 border-t border-[#ebebeb] text-xs">
+                      {feedbackObj.strengths && feedbackObj.strengths.length > 0 && (
+                        <div>
+                          <div className="font-semibold text-emerald-700 dark:text-emerald-400 flex items-center gap-1">
+                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            Key Strengths
+                          </div>
+                          <ul className="list-disc pl-4 mt-1 space-y-1 text-slate-700 leading-relaxed">
+                            {feedbackObj.strengths.map((str: string, idx: number) => (
+                              <li key={idx}>{str}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      
+                      {feedbackObj.gaps && feedbackObj.gaps.length > 0 && (
+                        <div>
+                          <div className="font-semibold text-rose-700 dark:text-rose-400 flex items-center gap-1">
+                            <span className="inline-block w-1.5 h-1.5 rounded-full bg-rose-500" />
+                            Gaps / Areas to Improve
+                          </div>
+                          <ul className="list-disc pl-4 mt-1 space-y-1 text-slate-700 leading-relaxed">
+                            {feedbackObj.gaps.map((gap: string, idx: number) => (
+                              <li key={idx}>{gap}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Loading indicator */}
+                  {aiLoading && (
+                    <div className="flex flex-col items-center justify-center space-y-2 py-4">
+                      <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-[#171717]" />
+                      <span className="text-xs text-[#888888] animate-pulse">Analyzing with AI...</span>
+                    </div>
+                  )}
+
+                  {/* Error message */}
+                  {aiError && !aiLoading && (
+                    <div className="p-3 text-xs rounded-md bg-[#f7d4d6] border border-[#ee0000] text-[#ee0000] space-y-1">
+                      <p>{aiError}</p>
+                      {aiErrorType === 'no_resume' && (
+                        <p className="mt-1">
+                          <Link href="/profile" className="font-semibold underline hover:text-[#c50000] text-[#ee0000] inline-block">
+                            Go to Profile →
+                          </Link>
+                        </p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* CTA Button */}
+                  {!aiLoading && (
+                    <Button
+                      variant={app.match_score !== null ? "outline" : "default"}
+                      onClick={handleGetMatchScore}
+                      className={`w-full h-8 px-3 text-xs flex items-center justify-center gap-1 cursor-pointer ${
+                        app.match_score !== null 
+                          ? 'bg-white border-[#ebebeb] hover:bg-[#f5f5f5] text-[#171717]' 
+                          : 'bg-[#171717] hover:bg-[#333] text-white'
+                      }`}
+                    >
+                      <Sparkles className="h-3 w-3" />
+                      {app.match_score !== null ? 'Re-run Analysis' : 'Get Match Score'}
+                    </Button>
+                  )}
                 </div>
 
                 {/* Resume Suggestions Card Placeholder */}
