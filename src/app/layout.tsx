@@ -45,7 +45,7 @@ export default function RootLayout({
             </p>
             <div className="flex items-center gap-4 text-xs text-[#888888]">
               <a
-                href="https://github.com"
+                href="https://github.com/ManasParauha"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hover:text-[#171717] transition-colors"
@@ -54,7 +54,7 @@ export default function RootLayout({
               </a>
               <span className="text-[#ebebeb]">•</span>
               <a
-                href="https://linkedin.com"
+                href="https://www.linkedin.com/in/manas-parauha-61b44031a/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hover:text-[#171717] transition-colors"
