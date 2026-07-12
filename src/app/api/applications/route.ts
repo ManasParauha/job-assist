@@ -2,11 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { z } from "zod";
+import { sanitizeHtml } from "@/lib/utils";
 
 const createApplicationSchema = z.object({
-  company: z.string().trim().min(1, "Company is required"),
-  role_title: z.string().trim().min(1, "Role title is required"),
-  jd_text: z.string().min(20, "Job description must be at least 20 characters"),
+  company: z.preprocess(
+    (val) => (typeof val === "string" ? sanitizeHtml(val) : val),
+    z.string().min(1, "Company is required").max(200, "Company must be at most 200 characters")
+  ),
+  role_title: z.preprocess(
+    (val) => (typeof val === "string" ? sanitizeHtml(val) : val),
+    z.string().min(1, "Role title is required").max(200, "Role title must be at most 200 characters")
+  ),
+  jd_text: z.preprocess(
+    (val) => (typeof val === "string" ? sanitizeHtml(val) : val),
+    z.string().min(20, "Job description must be at least 20 characters").max(10000, "Job description must be at most 10000 characters")
+  ),
   status: z.enum(["applied", "interview", "offer", "rejected"], {
     message: "Status must be one of: applied, interview, offer, rejected",
   }),
@@ -14,7 +24,10 @@ const createApplicationSchema = z.object({
     .string()
     .optional()
     .transform((val) => val || new Date().toISOString().split("T")[0]),
-  notes: z.string().optional().default(""),
+  notes: z.preprocess(
+    (val) => (typeof val === "string" ? sanitizeHtml(val) : val),
+    z.string().max(2000, "Notes must be at most 2000 characters").optional().default("")
+  ),
 });
 
 export async function GET(request: NextRequest) {
@@ -64,7 +77,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch (_) {
+      return NextResponse.json(
+        { error: "Invalid request body" },
+        { status: 400 }
+      );
+    }
     const result = createApplicationSchema.safeParse(body);
 
     if (!result.success) {

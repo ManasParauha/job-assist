@@ -5,14 +5,27 @@ import { z } from 'zod';
 import { query } from '@/lib/db';
 import { signToken } from '@/lib/auth';
 
+import { sanitizeHtml } from '@/lib/utils';
+
 const loginSchema = z.object({
-  email: z.string().email('Invalid email address'),
-  password: z.string().min(1, 'Password is required'),
+  email: z.preprocess(
+    (val) => (typeof val === 'string' ? sanitizeHtml(val) : val),
+    z.string().email('Invalid email address').max(200, 'Email must be at most 200 characters')
+  ),
+  password: z.string().min(1, 'Password is required').max(100, 'Password must be at most 100 characters'),
 });
 
 export async function POST(request: Request) {
   try {
-    const body = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch (_) {
+      return NextResponse.json(
+        { error: 'Invalid request body' },
+        { status: 400 }
+      );
+    }
     const parsed = loginSchema.safeParse(body);
 
     if (!parsed.success) {

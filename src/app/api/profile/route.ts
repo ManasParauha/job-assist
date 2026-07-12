@@ -2,12 +2,16 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { z } from "zod";
+import { sanitizeHtml } from "@/lib/utils";
 
 const updateProfileSchema = z.object({
-  resume_text: z
-    .string()
-    .trim()
-    .min(50, "Resume text must be at least 50 characters to encourage pasting a real, detailed resume."),
+  resume_text: z.preprocess(
+    (val) => (typeof val === "string" ? sanitizeHtml(val) : val),
+    z
+      .string()
+      .min(50, "Resume text must be at least 50 characters to encourage pasting a real, detailed resume.")
+      .max(10000, "Resume text must be at most 10000 characters")
+  ),
 });
 
 export async function GET(request: NextRequest) {
@@ -53,7 +57,15 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const body = await request.json();
+    let body;
+    try {
+      body = await request.json();
+    } catch (_) {
+      return NextResponse.json(
+        { error: "Invalid request body" },
+        { status: 400 }
+      );
+    }
     const result = updateProfileSchema.safeParse(body);
 
     if (!result.success) {

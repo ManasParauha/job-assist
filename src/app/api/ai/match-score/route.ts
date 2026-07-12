@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { callGroq } from "@/lib/ai";
+import { z } from "zod";
+import { checkRateLimit } from "@/lib/rate-limit";
+
+const aiRequestSchema = z.object({
+  applicationId: z.string().uuid("Invalid application ID"),
+});
 
 export async function POST(request: NextRequest) {
   try {
@@ -17,15 +23,26 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
 
-    const { applicationId } = body;
-    if (!applicationId) {
-      return NextResponse.json({ error: "applicationId is required" }, { status: 400 });
+    const parsed = aiRequestSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues[0].message }, { status: 400 });
     }
 
-    // Fetch the application
+    const { applicationId } = parsed.data;
+
+    // Rate Limit Check (max 10 AI calls per user per hour)
+    const rateLimit = checkRateLimit(user.userId);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "Rate limit exceeded. You can only make 10 AI requests per hour. Please try again later." },
+        { status: 429 }
+      );
+    }
+
+    // Fetch the application, scoped strictly by user_id
     const appRes = await query(
-      "SELECT id, user_id, jd_text FROM applications WHERE id = $1",
-      [applicationId]
+      "SELECT id, user_id, jd_text FROM applications WHERE id = $1 AND user_id = $2",
+      [applicationId, user.userId]
     );
 
     if (appRes.rows.length === 0) {
@@ -33,9 +50,6 @@ export async function POST(request: NextRequest) {
     }
 
     const application = appRes.rows[0];
-    if (application.user_id !== user.userId) {
-      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
-    }
 
     // Fetch the user's resume
     const profileRes = await query(
@@ -106,7 +120,7 @@ ${application.jd_text}
       return NextResponse.json({ error: "AI response format was invalid." }, { status: 500 });
     }
 
-    // Update application table
+    // Update application table, ensuring ownership
     const aiFeedback = JSON.stringify({
       strengths: parsedResult.strengths,
       gaps: parsedResult.gaps,

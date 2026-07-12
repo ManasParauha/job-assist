@@ -2,20 +2,37 @@ import { NextRequest, NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { query } from "@/lib/db";
 import { z } from "zod";
+import { sanitizeHtml } from "@/lib/utils";
 
 interface RouteParams {
   params: Promise<{ id: string }>
 }
 
+const paramsSchema = z.object({
+  id: z.string().uuid("Invalid application ID"),
+});
+
 const updateApplicationSchema = z.object({
-  company: z.string().trim().min(1, "Company is required"),
-  role_title: z.string().trim().min(1, "Role title is required"),
-  jd_text: z.string().min(20, "Job description must be at least 20 characters"),
+  company: z.preprocess(
+    (val) => (typeof val === "string" ? sanitizeHtml(val) : val),
+    z.string().min(1, "Company is required").max(200, "Company must be at most 200 characters")
+  ),
+  role_title: z.preprocess(
+    (val) => (typeof val === "string" ? sanitizeHtml(val) : val),
+    z.string().min(1, "Role title is required").max(200, "Role title must be at most 200 characters")
+  ),
+  jd_text: z.preprocess(
+    (val) => (typeof val === "string" ? sanitizeHtml(val) : val),
+    z.string().min(20, "Job description must be at least 20 characters").max(10000, "Job description must be at most 10000 characters")
+  ),
   status: z.enum(["applied", "interview", "offer", "rejected"], {
     message: "Status must be one of: applied, interview, offer, rejected",
   }),
   applied_date: z.string().trim().min(1, "Applied date is required"),
-  notes: z.string().optional().default(""),
+  notes: z.preprocess(
+    (val) => (typeof val === "string" ? sanitizeHtml(val) : val),
+    z.string().max(2000, "Notes must be at most 2000 characters").optional().default("")
+  ),
 });
 
 export async function GET(request: Request, { params }: RouteParams) {
@@ -25,27 +42,27 @@ export async function GET(request: Request, { params }: RouteParams) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = await params;
+    const { id: rawId } = await params;
+    const paramsParsed = paramsSchema.safeParse({ id: rawId });
+    if (!paramsParsed.success) {
+      return NextResponse.json({ error: "Invalid application ID" }, { status: 400 });
+    }
+    const id = paramsParsed.data.id;
 
     const dbRes = await query(
       `SELECT id, user_id, company, role_title, jd_text, status, 
               TO_CHAR(applied_date, 'YYYY-MM-DD') as applied_date, 
               match_score, ai_feedback, resume_suggestions, cover_letter, notes, created_at 
        FROM applications 
-       WHERE id = $1`,
-      [id]
+       WHERE id = $1 AND user_id = $2`,
+      [id, user.userId]
     );
 
     if (dbRes.rows.length === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    const application = dbRes.rows[0];
-    if (application.user_id !== user.userId) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
-
-    return NextResponse.json({ application });
+    return NextResponse.json({ application: dbRes.rows[0] });
   } catch (error: any) {
     console.error(`GET /api/applications/[id] Error:`, error);
     return NextResponse.json({ error: "Internal server error" }, { status: 500 });
@@ -59,19 +76,28 @@ export async function PUT(request: Request, { params }: RouteParams) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = await params;
+    const { id: rawId } = await params;
+    const paramsParsed = paramsSchema.safeParse({ id: rawId });
+    if (!paramsParsed.success) {
+      return NextResponse.json({ error: "Invalid application ID" }, { status: 400 });
+    }
+    const id = paramsParsed.data.id;
 
-    // Check ownership & existence first
-    const existCheck = await query("SELECT user_id FROM applications WHERE id = $1", [id]);
+    // Check ownership & existence first strictly in SQL
+    const existCheck = await query("SELECT user_id FROM applications WHERE id = $1 AND user_id = $2", [id, user.userId]);
     if (existCheck.rows.length === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
-    if (existCheck.rows[0].user_id !== user.userId) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    let body;
+    try {
+      body = await request.json();
+    } catch (_) {
+      return NextResponse.json(
+        { error: "Invalid request body" },
+        { status: 400 }
+      );
     }
-
-    const body = await request.json();
     const result = updateApplicationSchema.safeParse(body);
 
     if (!result.success) {
@@ -105,15 +131,16 @@ export async function DELETE(request: Request, { params }: RouteParams) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
 
-    const { id } = await params;
-
-    // Check ownership & existence first
-    const existCheck = await query("SELECT user_id FROM applications WHERE id = $1", [id]);
-    if (existCheck.rows.length === 0) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
+    const { id: rawId } = await params;
+    const paramsParsed = paramsSchema.safeParse({ id: rawId });
+    if (!paramsParsed.success) {
+      return NextResponse.json({ error: "Invalid application ID" }, { status: 400 });
     }
+    const id = paramsParsed.data.id;
 
-    if (existCheck.rows[0].user_id !== user.userId) {
+    // Check ownership & existence first strictly in SQL
+    const existCheck = await query("SELECT user_id FROM applications WHERE id = $1 AND user_id = $2", [id, user.userId]);
+    if (existCheck.rows.length === 0) {
       return NextResponse.json({ error: "Not found" }, { status: 404 });
     }
 
