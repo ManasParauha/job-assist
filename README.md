@@ -25,6 +25,7 @@
 *   **Authentication & Security:** JWT tokens stored in secure, `httpOnly` cookies & `bcryptjs` password hashing
 *   **Validation:** Zod schemas
 *   **AI Integration:** Groq SDK (using the LLaMA-based model wrapper)
+*   **PDF Text Extraction:** `pdf-parse` (v1.1.1)
 
 ---
 
@@ -114,5 +115,5 @@
 
 ### Future Improvements
 *   **Automated Testing Suite:** Introduce unit tests with Jest and End-to-End (E2E) testing with Playwright to safeguard core authentication and CRUD behaviors.
-*   **Resume Upload & Parsing:** Support PDF/DOCX resume file uploads, integrating an automatic text extractor or OCR parsing engine to populate the user profile.
+*   **Resume Format Extension:** Extend the PDF resume upload feature to also support DOCX and plain-text file uploads.
 *   **Status Alerts & Notifications:** Send automated transactional emails (via Resend or SendGrid) to notify users of status changes, deadline reminders, or interview updates.
